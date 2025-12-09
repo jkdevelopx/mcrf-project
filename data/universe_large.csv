@@ -1,1 +1,1 @@
-# place large list here (one ticker per line or csv with column 'ticker')
+universe = pd.read_csv("data/universe_large.csv")["ticker"].tolist()

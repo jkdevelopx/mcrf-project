@@ -4,4 +4,7 @@ yfinance
 yahooquery
 requests
 APScheduler
+streamlit
+plotly
+openai
 python-dotenv

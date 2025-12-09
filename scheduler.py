@@ -1,46 +1,38 @@
 import schedule
 import time
-from datetime import datetime
+import pandas as pd
 
-from scanner_engine import run_scanner
-from notify_discord import send_discord_message
-from log_config import setup_logging
-from config import DISCORD_WEBHOOK, SCHEDULE_TIME, LOG_FILE
-
-logger = setup_logging(LOG_FILE)
-
+from run_scanner import run_scan
+from notify.discord import send_discord
+from config import DISCORD_WEBHOOK, ALERT_SCORE_THRESHOLD
 
 def job():
-    logger.info("Running MCRF scheduled job...")
+    print("Running scheduled scan...")
 
-    try:
-        df = run_scanner()
-        logger.info("Scanner completed")
+    # load universe
+    universe = pd.read_csv("data/universe_small.csv")["ticker"].tolist()
 
-        top_hits = df.head(5)
+    # run scan
+    out = run_scan(universe)
 
-        msg = "**📈 MCRF — Daily Top Hits**\n"
-        msg += f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+    # filter
+    hits = out[out.score >= ALERT_SCORE_THRESHOLD]
 
-        for _, r in top_hits.iterrows():
-            msg += f"• **{r['ticker']}** — Score: `{r['score']:.2f}`\n"
+    if hits.empty:
+        message = "No high-score tickers found today."
+    else:
+        lines = [f"{row.ticker} — {row.score}" for row in hits.itertuples()]
+        message = "🚨 MCRF Auto Scan — High Score Picks\n" + "\n".join(lines)
 
-        send_discord_message(DISCORD_WEBHOOK, msg)
-        logger.info("Discord message sent")
+    # send discord
+    send_discord(DISCORD_WEBHOOK, message)
+    print("Scheduled job finished.\n")
 
-    except Exception as e:
-        logger.error(f"Error in job: {e}")
-        send_discord_message(DISCORD_WEBHOOK, f"❌ Scanner Error: {e}")
+# run at 09:00 every day
+schedule.every().day.at("09:00").do(job)
 
+print("Scheduler started... waiting for next run...")
 
-def start_scheduler():
-    logger.info(f"Scheduler started. Running daily at {SCHEDULE_TIME}")
-    schedule.every().day.at(SCHEDULE_TIME).do(job)
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-
-if __name__ == "__main__":
-    start_scheduler()
+while True:
+    schedule.run_pending()
+    time.sleep(1)

@@ -1,41 +1,36 @@
-# scheduler/apscheduler_job.py
-from apscheduler.schedulers.blocking import BlockingScheduler
-import os
-from core.fetcher import fetch_history
-from core.indicators import add_basic_indicators
-from core.scoring import score_signals
-from core.utils import chunk_list, log
-from notify.discord import send_discord_alert
-from config import BATCH_SIZE, FETCH_PERIOD_DAYS, ALERT_SCORE_THRESHOLD
 import pandas as pd
+from apscheduler.schedulers.blocking import BlockingScheduler
+from notify.discord import send_discord
+from run_scanner import run_scan   # ใช้ของจริงจาก run_scanner.py
+from config import ALERT_SCORE_THRESHOLD
 
+def run_scan_job():
+    """
+    ฟังก์ชันสำหรับ APScheduler เพื่อรันสแกนอัตโนมัติ
+    """
+    print("Running scheduled scan...")
 
-# load universe
-uni = pd.read_csv('data/universe_small.csv')['ticker'].astype(str).tolist()
+    # โหลด universe
+    universe = pd.read_csv("data/universe_small.csv")["ticker"].tolist()
 
+    # เรียกฟังก์ชันสแกนตัวจริง
+    result = run_scan(universe)
 
-sched = BlockingScheduler()
+    # เลือกหุ้นที่ score >= threshold
+    hits = result[result.score >= ALERT_SCORE_THRESHOLD]
 
+    if hits.empty:
+        message = "No high-score tickers found today."
+    else:
+        lines = [f"{row.ticker} — {row.score}" for row in hits.itertuples()]
+        message = "🚨 MCRF Auto Scan — High Score Picks\n" + "\n".join(lines)
 
-@sched.scheduled_job('interval', hours=24)
-def daily_scan_job():
-log.info('Starting daily scan')
-hits = []
-for batch in chunk_list(uni, BATCH_SIZE):
-for t in batch:
-df = fetch_history(t, period_days=FETCH_PERIOD_DAYS)
-if df is None:
-continue
-df = add_basic_indicators(df)
-score = score_signals(df)
-if score >= float(ALERT_SCORE_THRESHOLD):
-hits.append((t, score))
-# optional: short sleep to avoid rate limit
-if hits:
-body = 'MCRF Daily Hits:\n' + '\n'.join([f"{t} — {s}" for t,s in hits])
-send_discord_alert(body)
-log.info('Daily scan done')
+    send_discord(message)
+    print("Scheduled scan finished.")
 
-
-if __name__ == '__main__':
-sched.start()
+def start_scheduler():
+    scheduler = BlockingScheduler()
+    # รันทุกวันตอน 9 โมงเช้า (local)
+    scheduler.add_job(run_scan_job, "cron", hour=9, minute=0)
+    print("Scheduler started — job scheduled.")
+    scheduler.start()

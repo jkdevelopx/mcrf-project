@@ -1,0 +1,20 @@
+name: scheduled-scan
+on:
+  schedule:
+    - cron: '0 9 * * *'  # daily at 09:00 UTC (change to desired)
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Run scanner
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ALERT_SCORE_THRESHOLD: 80
+        run: python run_scanner.py
